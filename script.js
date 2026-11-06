@@ -8,6 +8,8 @@ const canvas=document.querySelector(".architecture-lines");
 const ctx=canvas.getContext("2d");
 const reducedMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
 const lastSeek=new WeakMap();
+const pendingSeek=new WeakMap();
+const seekTimers=new WeakMap();
 let target=0,position=0,active=-1,raf=0,dpr=1,w=0,h=0,turn=0;
 const pointer={x:0,y:0},pointerEase={x:0,y:0};
 
@@ -18,23 +20,33 @@ window.scrollTo({top:0,left:0,behavior:"instant"});
 function requestRender(){if(!raf)raf=requestAnimationFrame(render)}
 function resizeCanvas(){dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);canvas.style.width=w+"px";canvas.style.height=h+"px"}
 function updateTarget(){const rect=heroSection.getBoundingClientRect();siteHeader.classList.toggle("is-over-hero",rect.bottom>siteHeader.offsetHeight);target=Math.max(0,Math.min(1,-rect.top/Math.max(1,heroSection.offsetHeight-innerHeight)));requestRender()}
-function playHeroVideo(video){
- const playPromise=video.play();
- if(playPromise)playPromise.catch(error=>console.warn("La vidéo du hero n’a pas pu démarrer.",error));
-}
 function activate(step){
  if(step===active)return;active=step;
  heroPanels.forEach((panel,i)=>panel.classList.toggle("is-active",i===step));
  heroSteps.forEach((button,i)=>button.classList.toggle("is-active",i===step));
  heroVideos.forEach((video,i)=>{video.classList.toggle("is-active",i===step);if(i!==step)video.pause()});
- playHeroVideo(heroVideos[step]);
+ heroVideos[step].pause();
  heroCount.innerHTML="0"+(step+1)+" <i>/</i> 03";
 }
-function seek(video,time){
- if(video.readyState<2||video.seeking)return;
+function flushSeek(video){
+ if(video.readyState<2||video.seeking||video!==heroVideos[active])return;
+ const time=pendingSeek.get(video);
+ if(time===undefined)return;
  const now=performance.now(),last=lastSeek.get(video)||0;
- if(now-last<36||Math.abs(video.currentTime-time)<.035)return;
- lastSeek.set(video,now);try{video.currentTime=time}catch(_){}
+ const seekInterval=matchMedia("(pointer: coarse)").matches?90:36;
+ const remaining=seekInterval-(now-last);
+ if(remaining>0){
+  if(!seekTimers.has(video))seekTimers.set(video,setTimeout(()=>{seekTimers.delete(video);flushSeek(video)},remaining));
+  return;
+ }
+ pendingSeek.delete(video);
+ if(Math.abs(video.currentTime-time)<.035)return;
+ lastSeek.set(video,now);
+ try{video.currentTime=time}catch(error){console.warn("La vidéo du hero n’a pas pu être repositionnée.",error)}
+}
+function seek(video,time){
+ pendingSeek.set(video,time);
+ flushSeek(video);
 }
 function render(){
  raf=0;position+=(target-position)*(reducedMotion?.3:.13);if(Math.abs(target-position)<.0004)position=target;
@@ -45,7 +57,7 @@ function render(){
  heroSection.style.setProperty("--hero-drift",(reducedMotion?0:(position-.5)*-12).toFixed(2)+"px");
  if(Math.abs(target-position)>.0004)requestRender();
 }
-heroVideos.forEach(video=>{video.muted=true;video.playsInline=true;video.loop=true;video.preload="auto";video.addEventListener("loadedmetadata",requestRender);video.addEventListener("loadeddata",requestRender);video.addEventListener("seeked",()=>{if(video===heroVideos[active])requestRender()})});
+heroVideos.forEach(video=>{video.pause();video.muted=true;video.playsInline=true;video.loop=false;video.preload="auto";video.addEventListener("loadedmetadata",requestRender);video.addEventListener("loadeddata",requestRender);video.addEventListener("seeked",()=>{if(video===heroVideos[active]){flushSeek(video);requestRender()}})});
 heroSteps.forEach(button=>button.addEventListener("click",()=>{const step=Number(button.dataset.go),top=heroSection.getBoundingClientRect().top+scrollY,range=heroSection.offsetHeight-innerHeight;window.scrollTo({top:top+range*(step/3+.01),behavior:reducedMotion?"instant":"smooth"})}));
 window.addEventListener("scroll",updateTarget,{passive:true});
 window.addEventListener("resize",()=>{resizeCanvas();updateTarget()},{passive:true});
