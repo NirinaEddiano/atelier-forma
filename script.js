@@ -18,11 +18,16 @@ window.scrollTo({top:0,left:0,behavior:"instant"});
 function requestRender(){if(!raf)raf=requestAnimationFrame(render)}
 function resizeCanvas(){dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);canvas.style.width=w+"px";canvas.style.height=h+"px"}
 function updateTarget(){const rect=heroSection.getBoundingClientRect();siteHeader.classList.toggle("is-over-hero",rect.bottom>siteHeader.offsetHeight);target=Math.max(0,Math.min(1,-rect.top/Math.max(1,heroSection.offsetHeight-innerHeight)));requestRender()}
+function playHeroVideo(video){
+ const playPromise=video.play();
+ if(playPromise)playPromise.catch(error=>console.warn("La vidéo du hero n’a pas pu démarrer.",error));
+}
 function activate(step){
  if(step===active)return;active=step;
  heroPanels.forEach((panel,i)=>panel.classList.toggle("is-active",i===step));
  heroSteps.forEach((button,i)=>button.classList.toggle("is-active",i===step));
  heroVideos.forEach((video,i)=>{video.classList.toggle("is-active",i===step);if(i!==step)video.pause()});
+ playHeroVideo(heroVideos[step]);
  heroCount.innerHTML="0"+(step+1)+" <i>/</i> 03";
 }
 function seek(video,time){
@@ -40,11 +45,11 @@ function render(){
  heroSection.style.setProperty("--hero-drift",(reducedMotion?0:(position-.5)*-12).toFixed(2)+"px");
  if(Math.abs(target-position)>.0004)requestRender();
 }
-heroVideos.forEach(video=>{video.pause();video.addEventListener("loadedmetadata",requestRender);video.addEventListener("loadeddata",requestRender);video.addEventListener("seeked",()=>{if(video===heroVideos[active])requestRender()})});
+heroVideos.forEach(video=>{video.muted=true;video.playsInline=true;video.loop=true;video.preload="auto";video.addEventListener("loadedmetadata",requestRender);video.addEventListener("loadeddata",requestRender);video.addEventListener("seeked",()=>{if(video===heroVideos[active])requestRender()})});
 heroSteps.forEach(button=>button.addEventListener("click",()=>{const step=Number(button.dataset.go),top=heroSection.getBoundingClientRect().top+scrollY,range=heroSection.offsetHeight-innerHeight;window.scrollTo({top:top+range*(step/3+.01),behavior:reducedMotion?"instant":"smooth"})}));
 window.addEventListener("scroll",updateTarget,{passive:true});
 window.addEventListener("resize",()=>{resizeCanvas();updateTarget()},{passive:true});
-window.addEventListener("pageshow",()=>{window.scrollTo({top:0,left:0,behavior:"instant"});target=0;position=0;activate(0);heroVideos.forEach(video=>{video.pause();try{video.currentTime=0}catch(_){}});requestRender()});
+window.addEventListener("pageshow",()=>{window.scrollTo({top:0,left:0,behavior:"instant"});target=0;position=0;heroVideos.forEach(video=>{video.pause();try{video.currentTime=0}catch(_){}});active=-1;activate(0);requestRender()});
 window.addEventListener("pointermove",event=>{pointer.x=event.clientX/innerWidth*2-1;pointer.y=event.clientY/innerHeight*2-1},{passive:true});
 
 function project(point,ax,ay,cx,cy,scale){
